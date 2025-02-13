@@ -1,0 +1,113 @@
+// *****************************************************************************
+// * This file is part of the FreeFileSync project. It is distributed under    *
+// * GNU General Public License: https://www.gnu.org/licenses/gpl-3.0          *
+// * Copyright (C) Zenju (zenju AT freefilesync DOT org) - All Rights Reserved *
+// *****************************************************************************
+
+#ifndef FTP_COMMON_H_92889457091324321454
+#define FTP_COMMON_H_92889457091324321454
+
+#include <zen/base64.h>
+#include <zen/string_tools.h>
+#include "abstract.h"
+
+
+namespace fff
+{
+inline
+Zstring encodePasswordBase64(const ZstringView pass)
+{
+    using namespace zen;
+    return utfTo<Zstring>(stringEncodeBase64(utfTo<std::string>(pass))); //nothrow
+}
+
+
+inline
+Zstring decodePasswordBase64(const ZstringView pass)
+{
+    using namespace zen;
+    return utfTo<Zstring>(stringDecodeBase64(utfTo<std::string>(pass))); //nothrow
+}
+
+
+//according to the SFTP path syntax, the username must not contain raw @ and :
+//-> we don't need a full urlencode!
+inline
+Zstring encodeFtpUsername(Zstring name)
+{
+    using namespace zen;
+    replace(name, Zstr('%'), Zstr("%25")); //first!
+    replace(name, Zstr('@'), Zstr("%40"));
+    replace(name, Zstr(':'), Zstr("%3A"));
+    return name;
+}
+
+
+inline
+Zstring decodeFtpUsername(Zstring name)
+{
+    using namespace zen;
+    replace(name, Zstr("%40"), Zstr('@'));
+    replace(name, Zstr("%3A"), Zstr(':'));
+    replace(name, Zstr("%3a"), Zstr(':'));
+    replace(name, Zstr("%25"), Zstr('%')); //last!
+    return name;
+}
+
+
+inline
+std::optional<std::pair<Zstring, int /*optional: port*/>> parseIpv6Address(ZstringView str)
+{
+    using namespace zen;
+
+    str = trimCpy(str);
+
+    int port = 0;
+
+    //https://en.wikipedia.org/wiki/IPv6#Address_representation
+    if (startsWith(str, Zstr('[')))
+    {
+        str = str.substr(1);
+        if (!contains(str, Zstr(']')))
+            return std::nullopt;
+
+        ZstringView portStr = afterLast (str, Zstr(']'), IfNotFoundReturn::none);
+        str = beforeLast(str, Zstr(']'), IfNotFoundReturn::none);
+
+        if (!portStr.empty())
+        {
+            if (!startsWith(portStr, Zstr(':')))
+                return std::nullopt;
+            portStr = portStr.substr(1);
+
+            if (!std::all_of(portStr.begin(), portStr.end(), &isDigit<Zchar>))
+                return std::nullopt;
+
+            port = stringTo<int>(portStr); //valid range: [0, 65535]
+        }
+    }
+
+    if (!contains(str, Zstr(':')) ||
+        !std::all_of(str.begin(), str.end(), [](Zchar c)
+{
+    return isHexDigit(c) || c == Zstr(':');
+    }))
+    return std::nullopt;
+
+    return std::make_pair(Zstring(str), port);
+}
+
+
+//(S)FTP path relative to server root using Unix path separators and with leading slash
+inline
+Zstring getServerRelPath(const AfsPath& itemPath)
+{
+    using namespace zen;
+    if constexpr (FILE_NAME_SEPARATOR != Zstr('/' ))
+        return Zstr('/') + replaceCpy(itemPath.value, FILE_NAME_SEPARATOR, Zstr('/'));
+    else
+        return Zstr('/') + itemPath.value;
+}
+}
+
+#endif //FTP_COMMON_H_92889457091324321454
